@@ -4,6 +4,7 @@ import { createMcpToolError, isApiError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
+import { stripHtml } from '../utils/html-stripper.js';
 import { z } from 'zod';
 
 /**
@@ -827,6 +828,16 @@ export class ToolHandler {
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )[0];
 
+    // Helper to process body: redact PII, then strip HTML if configured
+    const processBody = (body: string | undefined): string => {
+      if (!config.security.allowPii) return '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]';
+      if (!body) return '';
+      if (config.formatting.stripHtml) {
+        return stripHtml(body, config.formatting.maxBodyLength || undefined);
+      }
+      return body;
+    };
+
     const summary = {
       conversation: {
         id: conversation.id,
@@ -840,13 +851,13 @@ export class ToolHandler {
       },
       firstCustomerMessage: firstCustomerMessage ? {
         id: firstCustomerMessage.id,
-        body: config.security.allowPii ? firstCustomerMessage.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
+        body: processBody(firstCustomerMessage.body),
         createdAt: firstCustomerMessage.createdAt,
         customer: firstCustomerMessage.customer,
       } : null,
       latestStaffReply: latestStaffReply ? {
         id: latestStaffReply.id,
-        body: config.security.allowPii ? latestStaffReply.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
+        body: processBody(latestStaffReply.body),
         createdAt: latestStaffReply.createdAt,
         createdBy: latestStaffReply.createdBy,
       } : null,
@@ -875,11 +886,14 @@ export class ToolHandler {
 
     const threads = response._embedded?.threads || [];
     
-    // Redact PII if configured
-    const processedThreads = threads.map(thread => ({
-      ...thread,
-      body: config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]',
-    }));
+    // Redact PII if configured, then strip HTML if configured
+    const processedThreads = threads.map(thread => {
+      let body = config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]';
+      if (config.security.allowPii && config.formatting.stripHtml && body) {
+        body = stripHtml(body, config.formatting.maxBodyLength || undefined);
+      }
+      return { ...thread, body };
+    });
 
     return {
       content: [
