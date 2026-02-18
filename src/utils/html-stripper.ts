@@ -92,10 +92,11 @@ export function stripQuotedContent(text: string): string {
 
     // Pattern 3: Forward header block — "Von:"/"From:" followed by "Datum:"/"Date:"
     // within the next 8 lines (allows blank lines between headers)
-    if (/^(Von|From|De|Da|Di):\s+.+/i.test(line)) {
+    // Case-SENSITIVE: real email headers are always capitalized
+    if (/^(Von|From|De|Da|Di):\s+.+/.test(line)) {
       for (let j = i + 1; j < Math.min(i + 8, lines.length); j++) {
         const nextLine = lines[j].trim();
-        if (/^(Datum|Date|Fecha|Data):\s+.+/i.test(nextLine)) {
+        if (/^(Datum|Date|Fecha|Data):\s+.+/.test(nextLine)) {
           cutIndex = i;
           break;
         }
@@ -111,5 +112,9 @@ export function stripQuotedContent(text: string): string {
   if (kept.length < 10) return text;
 
   const removedChars = lines.slice(cutIndex).join('\n').length;
+
+  // Don't strip tiny amounts — likely a false positive, not a real forwarded email
+  if (removedChars < 100) return text;
+
   return kept + `\n\n[Quoted/forwarded content removed - ${removedChars} chars]`;
 }
