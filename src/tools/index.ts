@@ -4,7 +4,7 @@ import { createMcpToolError, isApiError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
-import { stripHtml } from '../utils/html-stripper.js';
+import { stripHtml, stripQuotedContent } from '../utils/html-stripper.js';
 import { z } from 'zod';
 
 /**
@@ -828,12 +828,14 @@ export class ToolHandler {
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )[0];
 
-    // Helper to process body: redact PII, then strip HTML if configured
+    // Helper to process body: redact PII, strip HTML, strip quoted/forwarded content
     const processBody = (body: string | undefined): string => {
       if (!config.security.allowPii) return '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]';
       if (!body) return '';
       if (config.formatting.stripHtml) {
-        return stripHtml(body, config.formatting.maxBodyLength || undefined);
+        let text = stripHtml(body, config.formatting.maxBodyLength || undefined);
+        text = stripQuotedContent(text);
+        return text;
       }
       return body;
     };
@@ -886,11 +888,12 @@ export class ToolHandler {
 
     const threads = response._embedded?.threads || [];
     
-    // Redact PII if configured, then strip HTML if configured
+    // Redact PII if configured, then strip HTML + quoted content if configured
     const processedThreads = threads.map(thread => {
       let body = config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]';
       if (config.security.allowPii && config.formatting.stripHtml && body) {
         body = stripHtml(body, config.formatting.maxBodyLength || undefined);
+        body = stripQuotedContent(body);
       }
       return { ...thread, body };
     });
