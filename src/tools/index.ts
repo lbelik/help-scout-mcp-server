@@ -56,6 +56,10 @@ import {
   AdvancedConversationSearchInputSchema,
   MultiStatusConversationSearchInputSchema,
   StructuredConversationFilterInputSchema,
+  ListUsersInputSchema,
+  GetCompanyReportInputSchema,
+  GetUserReportInputSchema,
+  GetProductivityReportInputSchema,
 } from '../schema/types.js';
 
 export class ToolHandler {
@@ -409,6 +413,73 @@ export class ToolHandler {
           },
         },
       },
+      {
+        name: 'listUsers',
+        description: 'List Help Scout users (agents). Returns user IDs needed for per-agent reports. Filter by email or mailbox.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            email: { type: 'string', description: 'Filter by email address' },
+            mailbox: { type: 'number', description: 'Filter by mailbox ID — only return users with access to this mailbox' },
+            page: { type: 'number', description: 'Page number (default 1)', minimum: 1, default: 1 },
+          },
+        },
+      },
+      {
+        name: 'getCompanyReport',
+        description: 'Get company-wide report with per-agent breakdown. Returns replies, customers helped, happiness scores for all agents in one call. Requires date range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', format: 'date-time', description: 'Start of date range (ISO 8601)' },
+            end: { type: 'string', format: 'date-time', description: 'End of date range (ISO 8601)' },
+            previousStart: { type: 'string', format: 'date-time', description: 'Start of previous period for comparison' },
+            previousEnd: { type: 'string', format: 'date-time', description: 'End of previous period for comparison' },
+            mailboxes: { type: 'string', description: 'Comma-separated mailbox IDs to filter by' },
+            tags: { type: 'string', description: 'Comma-separated tag IDs to filter by' },
+            types: { type: 'string', description: 'Comma-separated conversation types (email, chat, phone)' },
+            folders: { type: 'string', description: 'Comma-separated folder IDs to filter by' },
+          },
+          required: ['start', 'end'],
+        },
+      },
+      {
+        name: 'getUserReport',
+        description: 'Get detailed report for a single agent. Returns response time, resolution time, handle time, happiness, and conversation counts. Requires user ID from listUsers.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            user: { type: 'number', description: 'User ID from listUsers results' },
+            start: { type: 'string', format: 'date-time', description: 'Start of date range (ISO 8601)' },
+            end: { type: 'string', format: 'date-time', description: 'End of date range (ISO 8601)' },
+            previousStart: { type: 'string', format: 'date-time', description: 'Start of previous period for comparison' },
+            previousEnd: { type: 'string', format: 'date-time', description: 'End of previous period for comparison' },
+            mailboxes: { type: 'string', description: 'Comma-separated mailbox IDs to filter by' },
+            tags: { type: 'string', description: 'Comma-separated tag IDs to filter by' },
+            types: { type: 'string', description: 'Comma-separated conversation types (email, chat, phone)' },
+            folders: { type: 'string', description: 'Comma-separated folder IDs to filter by' },
+          },
+          required: ['user', 'start', 'end'],
+        },
+      },
+      {
+        name: 'getProductivityReport',
+        description: 'Get team-wide productivity metrics. Returns first response time, resolution time, handle time, replies per resolution. Requires date range.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            start: { type: 'string', format: 'date-time', description: 'Start of date range (ISO 8601)' },
+            end: { type: 'string', format: 'date-time', description: 'End of date range (ISO 8601)' },
+            previousStart: { type: 'string', format: 'date-time', description: 'Start of previous period for comparison' },
+            previousEnd: { type: 'string', format: 'date-time', description: 'End of previous period for comparison' },
+            mailboxes: { type: 'string', description: 'Comma-separated mailbox IDs to filter by' },
+            tags: { type: 'string', description: 'Comma-separated tag IDs to filter by' },
+            types: { type: 'string', description: 'Comma-separated conversation types (email, chat, phone)' },
+            folders: { type: 'string', description: 'Comma-separated folder IDs to filter by' },
+          },
+          required: ['start', 'end'],
+        },
+      },
     ];
   }
 
@@ -492,6 +563,18 @@ export class ToolHandler {
           break;
         case 'structuredConversationFilter':
           result = await this.structuredConversationFilter(request.params.arguments || {});
+          break;
+        case 'listUsers':
+          result = await this.listUsers(request.params.arguments || {});
+          break;
+        case 'getCompanyReport':
+          result = await this.getCompanyReport(request.params.arguments || {});
+          break;
+        case 'getUserReport':
+          result = await this.getUserReport(request.params.arguments || {});
+          break;
+        case 'getProductivityReport':
+          result = await this.getProductivityReport(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -1451,6 +1534,119 @@ export class ToolHandler {
           clientSideFiltering: clientSideFiltered ? `createdBefore filter removed ${originalCount - conversations.length} of ${originalCount} results` : undefined,
           note: 'Structural filtering applied. For content-based search or rep activity, use comprehensiveConversationSearch.',
         }, null, 2),
+      }],
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // Reports & Users tools
+  // ───────────────────────────────────────────────────────────────
+
+  /**
+   * Build query params shared by all report endpoints.
+   */
+  private buildReportParams(input: Record<string, unknown>): Record<string, unknown> {
+    const params: Record<string, unknown> = {
+      start: input.start,
+      end: input.end,
+    };
+    if (input.previousStart) params.previousStart = input.previousStart;
+    if (input.previousEnd) params.previousEnd = input.previousEnd;
+    if (input.mailboxes) params.mailboxes = input.mailboxes;
+    if (input.tags) params.tags = input.tags;
+    if (input.types) params.types = input.types;
+    if (input.folders) params.folders = input.folders;
+    return params;
+  }
+
+  private async listUsers(args: unknown): Promise<CallToolResult> {
+    const input = ListUsersInputSchema.parse(args);
+    const params: Record<string, unknown> = {
+      page: input.page,
+    };
+    if (input.email) params.email = input.email;
+    if (input.mailbox) params.mailbox = input.mailbox;
+
+    interface UserResponse {
+      id: number;
+      firstName: string;
+      lastName: string;
+      email: string;
+      role: string;
+      type: string;
+    }
+
+    const response = await helpScoutClient.get<PaginatedResponse<UserResponse>>('/users', params);
+    const users = response._embedded?.users || [];
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          users: users.map(u => ({
+            id: u.id,
+            name: `${u.firstName} ${u.lastName}`,
+            email: u.email,
+            role: u.role,
+            type: u.type,
+          })),
+          totalUsers: response.page?.totalElements || users.length,
+          page: response.page?.number || 1,
+          totalPages: response.page?.totalPages || 1,
+          nextSteps: [
+            'Use user IDs with getUserReport for per-agent stats',
+            'Use getCompanyReport to compare all agents at once',
+          ],
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getCompanyReport(args: unknown): Promise<CallToolResult> {
+    const input = GetCompanyReportInputSchema.parse(args);
+    const params = this.buildReportParams(input as unknown as Record<string, unknown>);
+
+    const response = await helpScoutClient.get<Record<string, unknown>>('/reports/company', params);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          ...response,
+          nextSteps: [
+            'Use getUserReport with a specific user ID for deeper per-agent stats',
+            'Use getProductivityReport for team-wide response/resolution time distributions',
+          ],
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getUserReport(args: unknown): Promise<CallToolResult> {
+    const input = GetUserReportInputSchema.parse(args);
+    const params = this.buildReportParams(input as unknown as Record<string, unknown>);
+    params.user = input.user;
+
+    const response = await helpScoutClient.get<Record<string, unknown>>('/reports/user', params);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(response, null, 2),
+      }],
+    };
+  }
+
+  private async getProductivityReport(args: unknown): Promise<CallToolResult> {
+    const input = GetProductivityReportInputSchema.parse(args);
+    const params = this.buildReportParams(input as unknown as Record<string, unknown>);
+
+    const response = await helpScoutClient.get<Record<string, unknown>>('/reports/productivity', params);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify(response, null, 2),
       }],
     };
   }

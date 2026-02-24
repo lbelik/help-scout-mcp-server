@@ -433,6 +433,8 @@ export class HelpScoutClient {
     if (endpoint.includes('/conversations')) return 300; // 5 minutes
     if (endpoint.includes('/mailboxes')) return 1440; // 24 hours
     if (endpoint.includes('/threads')) return 300; // 5 minutes
+    if (endpoint.includes('/reports/')) return 600; // 10 minutes (reports are expensive)
+    if (endpoint.includes('/users')) return 600; // 10 minutes (user list rarely changes)
     return 300; // Default 5 minutes
   }
 

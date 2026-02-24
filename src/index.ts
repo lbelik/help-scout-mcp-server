@@ -90,16 +90,22 @@ ${inboxes.length > 0 ? inboxList : '  No inboxes found - check API credentials'}
 | Lookup by ticket number (#12345) | structuredConversationFilter |
 | Get full conversation thread | getThreads |
 | Quick conversation preview | getConversationSummary |
+| List agents (get user IDs) | listUsers |
+| Compare all agents (replies, happiness) | getCompanyReport |
+| Deep dive on one agent | getUserReport |
+| Team productivity metrics | getProductivityReport |
 
 ## Workflow Patterns
 - **Ticket investigation**: searchConversations → getConversationSummary → getThreads
 - **Keyword research**: comprehensiveConversationSearch → getThreads for details
 - **Customer history**: advancedConversationSearch with customerEmail → getThreads
+- **Agent comparison**: listUsers → getCompanyReport (all agents at once) → getUserReport (drill into one)
 
 ## Notes
 - Always use inbox IDs from the list above (not names)
 - All search tools default to active+pending+closed statuses
-- Use getServerTime for date-relative queries`;
+- Use getServerTime for date-relative queries
+- Report tools require start/end date range in ISO 8601 format`;
 
       logger.info('Inbox discovery successful', { inboxCount: inboxes.length });
       return { instructions, inboxes };

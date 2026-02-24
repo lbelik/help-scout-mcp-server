@@ -168,6 +168,33 @@ export const ErrorSchema = z.object({
   details: z.record(z.unknown()).default({}),
 });
 
+// Users API
+export const ListUsersInputSchema = z.object({
+  email: z.string().optional(),
+  mailbox: z.number().optional(),
+  page: z.number().min(1).default(1),
+});
+
+// Reports API — shared params
+export const ReportCommonParamsSchema = z.object({
+  start: z.string().describe('Start of date range (ISO 8601, e.g. 2026-01-01T00:00:00Z)'),
+  end: z.string().describe('End of date range (ISO 8601, e.g. 2026-02-24T23:59:59Z)'),
+  previousStart: z.string().optional().describe('Start of previous period for comparison'),
+  previousEnd: z.string().optional().describe('End of previous period for comparison'),
+  mailboxes: z.string().optional().describe('Comma-separated mailbox IDs to filter by'),
+  tags: z.string().optional().describe('Comma-separated tag IDs to filter by'),
+  types: z.string().optional().describe('Comma-separated conversation types (email, chat, phone)'),
+  folders: z.string().optional().describe('Comma-separated folder IDs to filter by'),
+});
+
+export const GetCompanyReportInputSchema = ReportCommonParamsSchema;
+
+export const GetUserReportInputSchema = ReportCommonParamsSchema.extend({
+  user: z.number().describe('User ID to get report for (from listUsers)'),
+});
+
+export const GetProductivityReportInputSchema = ReportCommonParamsSchema;
+
 // Type exports
 export type Inbox = z.infer<typeof InboxSchema>;
 export type Conversation = z.infer<typeof ConversationSchema>;
@@ -178,5 +205,9 @@ export type GetThreadsInput = z.infer<typeof GetThreadsInputSchema>;
 export type GetConversationSummaryInput = z.infer<typeof GetConversationSummaryInputSchema>;
 export type AdvancedConversationSearchInput = z.infer<typeof AdvancedConversationSearchInputSchema>;
 export type MultiStatusConversationSearchInput = z.infer<typeof MultiStatusConversationSearchInputSchema>;
+export type ListUsersInput = z.infer<typeof ListUsersInputSchema>;
+export type GetCompanyReportInput = z.infer<typeof GetCompanyReportInputSchema>;
+export type GetUserReportInput = z.infer<typeof GetUserReportInputSchema>;
+export type GetProductivityReportInput = z.infer<typeof GetProductivityReportInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;
