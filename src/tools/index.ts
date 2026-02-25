@@ -60,7 +60,13 @@ import {
   GetCompanyReportInputSchema,
   GetUserReportInputSchema,
   GetProductivityReportInputSchema,
+  GetAttachmentsInputSchema,
+  GetAttachmentDataInputSchema,
 } from '../schema/types.js';
+
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 export class ToolHandler {
   private callHistory: string[] = [];
@@ -480,6 +486,38 @@ export class ToolHandler {
           required: ['start', 'end'],
         },
       },
+      {
+        name: 'getAttachments',
+        description: 'List attachment metadata for a conversation. Returns filename, size, mimeType for each attachment across all threads. Use getAttachmentData to download a specific attachment.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: {
+              type: 'string',
+              description: 'The conversation ID to get attachments for',
+            },
+          },
+          required: ['conversationId'],
+        },
+      },
+      {
+        name: 'getAttachmentData',
+        description: 'Download a specific attachment. Images < 1MB are returned inline for visual inspection. Larger files or non-images are saved to a temp file path.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            conversationId: {
+              type: 'string',
+              description: 'The conversation ID',
+            },
+            attachmentId: {
+              type: 'string',
+              description: 'The attachment ID (from getAttachments results)',
+            },
+          },
+          required: ['conversationId', 'attachmentId'],
+        },
+      },
     ];
   }
 
@@ -575,6 +613,12 @@ export class ToolHandler {
           break;
         case 'getProductivityReport':
           result = await this.getProductivityReport(request.params.arguments || {});
+          break;
+        case 'getAttachments':
+          result = await this.getAttachments(request.params.arguments || {});
+          break;
+        case 'getAttachmentData':
+          result = await this.getAttachmentData(request.params.arguments || {});
           break;
         default:
           throw new Error(`Unknown tool: ${request.params.name}`);
@@ -972,13 +1016,16 @@ export class ToolHandler {
     const threads = response._embedded?.threads || [];
     
     // Redact PII if configured, then strip HTML + quoted content if configured
+    // Strip _embedded (contains raw attachment objects — use getAttachments instead)
     const processedThreads = threads.map(thread => {
-      let body = config.security.allowPii ? thread.body : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]';
+      const { _embedded, body: rawBody, ...rest } = thread as any;
+      let body = config.security.allowPii ? rawBody : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]';
       if (config.security.allowPii && config.formatting.stripHtml && body) {
         body = stripHtml(body, config.formatting.maxBodyLength || undefined);
         body = stripQuotedContent(body);
       }
-      return { ...thread, body };
+      const attachmentCount = _embedded?.attachments?.length || 0;
+      return { ...rest, body, attachmentCount };
     });
 
     return {
@@ -1647,6 +1694,142 @@ export class ToolHandler {
       content: [{
         type: 'text',
         text: JSON.stringify(response, null, 2),
+      }],
+    };
+  }
+
+  private async getAttachments(args: unknown): Promise<CallToolResult> {
+    const input = GetAttachmentsInputSchema.parse(args);
+
+    const response = await helpScoutClient.get<PaginatedResponse<any>>(
+      `/conversations/${input.conversationId}/threads`,
+      { page: 1, size: TOOL_CONSTANTS.MAX_THREAD_SIZE }
+    );
+
+    const threads = response._embedded?.threads || [];
+    const attachments: any[] = [];
+
+    for (const thread of threads) {
+      const threadAttachments = (thread as any)._embedded?.attachments || [];
+      for (const att of threadAttachments) {
+        attachments.push({
+          attachmentId: att.id,
+          threadId: thread.id,
+          filename: att.filename || att.fileName,
+          mimeType: att.mimeType,
+          size: att.size,
+          width: att.width || null,
+          height: att.height || null,
+          state: att.state || 'unknown',
+          threadCreatedAt: thread.createdAt,
+        });
+      }
+    }
+
+    // Warn about virus-flagged attachments
+    const virusWarnings = attachments
+      .filter(a => a.state === 'virus')
+      .map(a => `WARNING: ${a.filename} (ID ${a.attachmentId}) flagged as virus`);
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          conversationId: input.conversationId,
+          attachments,
+          totalCount: attachments.length,
+          ...(virusWarnings.length > 0 ? { virusWarnings } : {}),
+        }, null, 2),
+      }],
+    };
+  }
+
+  private async getAttachmentData(args: unknown): Promise<CallToolResult> {
+    const input = GetAttachmentDataInputSchema.parse(args);
+
+    // First get attachment metadata to know mimeType
+    const threadsResponse = await helpScoutClient.get<PaginatedResponse<any>>(
+      `/conversations/${input.conversationId}/threads`,
+      { page: 1, size: TOOL_CONSTANTS.MAX_THREAD_SIZE }
+    );
+
+    const threads = threadsResponse._embedded?.threads || [];
+    let attachmentMeta: any = null;
+
+    for (const thread of threads) {
+      const threadAttachments = (thread as any)._embedded?.attachments || [];
+      const found = threadAttachments.find((a: any) => String(a.id) === String(input.attachmentId));
+      if (found) {
+        attachmentMeta = found;
+        break;
+      }
+    }
+
+    if (!attachmentMeta) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: { code: 'NOT_FOUND', message: `Attachment ${input.attachmentId} not found in conversation ${input.conversationId}` } }, null, 2) }],
+        isError: true,
+      };
+    }
+
+    if (attachmentMeta.state === 'virus') {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: { code: 'BLOCKED', message: `Attachment ${input.attachmentId} (${attachmentMeta.filename}) is flagged as a virus. Download blocked.` } }, null, 2) }],
+        isError: true,
+      };
+    }
+
+    // Download attachment data
+    const dataResponse = await helpScoutClient.get<{ data: string }>(
+      `/conversations/${input.conversationId}/attachments/${input.attachmentId}/data`
+    );
+
+    const base64Data = dataResponse.data;
+    const mimeType = attachmentMeta.mimeType || 'application/octet-stream';
+    const isImage = mimeType.startsWith('image/');
+    const base64SizeBytes = base64Data.length;
+    const ONE_MB = 1_000_000;
+
+    // Small images: return inline for Claude to see
+    if (isImage && base64SizeBytes < ONE_MB) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              filename: attachmentMeta.filename,
+              mimeType,
+              size: attachmentMeta.size,
+              width: attachmentMeta.width || null,
+              height: attachmentMeta.height || null,
+            }, null, 2),
+          },
+          {
+            type: 'image',
+            data: base64Data,
+            mimeType,
+          } as any,
+        ],
+      };
+    }
+
+    // Large images or non-images: save to temp file
+    const ext = path.extname(attachmentMeta.filename || '') || (isImage ? '.png' : '.bin');
+    const tempFilePath = path.join(os.tmpdir(), `helpscout_att_${input.attachmentId}${ext}`);
+    fs.writeFileSync(tempFilePath, Buffer.from(base64Data, 'base64'));
+
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          filename: attachmentMeta.filename,
+          mimeType,
+          size: attachmentMeta.size,
+          savedTo: tempFilePath,
+          note: isImage
+            ? 'Image too large for inline display. Use the Read tool to view this file.'
+            : 'Non-image file saved to disk. Use the Read tool to view this file.',
+        }, null, 2),
       }],
     };
   }

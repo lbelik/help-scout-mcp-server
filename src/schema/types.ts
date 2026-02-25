@@ -195,6 +195,16 @@ export const GetUserReportInputSchema = ReportCommonParamsSchema.extend({
 
 export const GetProductivityReportInputSchema = ReportCommonParamsSchema;
 
+// Attachment tools
+export const GetAttachmentsInputSchema = z.object({
+  conversationId: z.string(),
+});
+
+export const GetAttachmentDataInputSchema = z.object({
+  conversationId: z.string(),
+  attachmentId: z.string(),
+});
+
 // Type exports
 export type Inbox = z.infer<typeof InboxSchema>;
 export type Conversation = z.infer<typeof ConversationSchema>;
@@ -209,5 +219,7 @@ export type ListUsersInput = z.infer<typeof ListUsersInputSchema>;
 export type GetCompanyReportInput = z.infer<typeof GetCompanyReportInputSchema>;
 export type GetUserReportInput = z.infer<typeof GetUserReportInputSchema>;
 export type GetProductivityReportInput = z.infer<typeof GetProductivityReportInputSchema>;
+export type GetAttachmentsInput = z.infer<typeof GetAttachmentsInputSchema>;
+export type GetAttachmentDataInput = z.infer<typeof GetAttachmentDataInputSchema>;
 export type ServerTime = z.infer<typeof ServerTimeSchema>;
 export type ApiError = z.infer<typeof ErrorSchema>;
