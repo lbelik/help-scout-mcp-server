@@ -9,7 +9,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-v162)
+- [What's New](#whats-new-in-v170)
 - [Quick Start](#quick-start)
 - [API Credentials](#getting-your-api-credentials)
 - [Tools & Capabilities](#tools--capabilities)
@@ -17,7 +17,15 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
-## What's New in v1.6.2
+## What's New in v1.7.0
+
+- **Attachment Support**: Two new tools for viewing customer-attached screenshots and files:
+  - `getAttachments` — Lists attachment metadata (filename, size, mimeType) for all threads in a conversation, without downloading binary data
+  - `getAttachmentData` — Downloads a specific attachment; small images (< 1MB) are returned inline for Claude to see, larger files are saved to a temp path
+- **Token Savings**: `getThreads` now strips `_embedded` attachment objects (which were serialized as unread noise) and replaces them with a lightweight `attachmentCount` field per thread
+- **Virus Protection**: Attachments flagged as `state: "virus"` are surfaced with warnings in `getAttachments` and blocked from download in `getAttachmentData`
+
+### Previous Release (v1.6.2)
 
 - **Date Filter Fix**: `createdAfter` and `timeframeDays` now correctly filter by conversation creation date instead of last modification date. Previously, all search tools mapped `createdAfter` to Help Scout's `modifiedSince` API parameter, silently excluding conversations that were created within the timeframe but not recently modified. Now uses Help Scout query syntax `createdAt:[date TO *]` for accurate creation-date filtering.
 - **Multi-Status Search Consistency**: `advancedConversationSearch` and `structuredConversationFilter` now search all statuses (active, pending, closed) by default, matching the behavior established in v1.6.0 for `searchConversations`. Previously, omitting the status parameter silently returned only active conversations.
@@ -149,7 +157,9 @@ Environment variables match Help Scout's UI exactly:
 | Tool | Description | Use Case |
 |------|-------------|----------|
 | `getConversationSummary` | Customer message + latest staff reply summary | Quick conversation overview |
-| `getThreads` | Complete conversation message history | Full context analysis |
+| `getThreads` | Complete conversation message history (with `attachmentCount` per thread) | Full context analysis |
+| `getAttachments` | List attachment metadata across all threads | See what files/screenshots a customer attached |
+| `getAttachmentData` | Download a specific attachment (inline for small images, temp file for large) | View customer screenshots |
 | `getServerTime` | Current server timestamp | Time-relative searches |
 
 ### Inbox Auto-Discovery (v1.6.0+)
