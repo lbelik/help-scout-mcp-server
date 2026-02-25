@@ -25,6 +25,11 @@
 - **Claude Code Auto-Fetch**: Shared skill file (`.claude/skills/attachment-handling.md`) wires attachment tools into `/ticket`, `/investigate-ticket`, and `/helpscout conversation` commands — screenshots display inline automatically, no manual tool calls needed
 - **Token Savings**: `getThreads` now strips `_embedded` attachment objects (which were serialized as unread noise) and replaces them with a lightweight `attachmentCount` field per thread
 - **Virus Protection**: Attachments flagged as `state: "virus"` are surfaced with warnings in `getAttachments` and blocked from download in `getAttachmentData`
+- **Reports API**: Four new tools for agent and team performance analytics:
+  - `listUsers` — List all Help Scout agents with IDs, emails, and roles
+  - `getCompanyReport` — All agents compared side-by-side in one call (replies, customers helped, happiness)
+  - `getUserReport` — Deep dive on a single agent (response time, resolution time, handle time)
+  - `getProductivityReport` — Team-wide metrics (first response time, handle time distributions, replies per resolution)
 
 ### Previous Release (v1.6.2)
 
@@ -162,6 +167,15 @@ Environment variables match Help Scout's UI exactly:
 | `getAttachments` | List attachment metadata across all threads | See what files/screenshots a customer attached |
 | `getAttachmentData` | Download a specific attachment (inline for small images, temp file for large) | View customer screenshots |
 | `getServerTime` | Current server timestamp | Time-relative searches |
+
+### Reporting Tools
+
+| Tool | Description | Use Case |
+|------|-------------|----------|
+| `listUsers` | List all Help Scout agents with IDs, emails, and roles | Get user IDs for per-agent reports |
+| `getCompanyReport` | All agents compared side-by-side — replies sent, customers helped, happiness scores | Team-wide agent comparison |
+| `getUserReport` | Deep dive on a single agent — response time, resolution time, handle time, conversation counts | Individual agent performance |
+| `getProductivityReport` | Team-wide metrics — first response time, resolution time, handle time distributions, replies per resolution | Team productivity analysis |
 
 ### Inbox Auto-Discovery (v1.6.0+)
 
