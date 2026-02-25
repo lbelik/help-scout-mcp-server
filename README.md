@@ -22,6 +22,7 @@
 - **Attachment Support**: Two new tools for viewing customer-attached screenshots and files:
   - `getAttachments` — Lists attachment metadata (filename, size, mimeType) for all threads in a conversation, without downloading binary data
   - `getAttachmentData` — Downloads a specific attachment; small images (< 1MB) are returned inline for Claude to see, larger files are saved to a temp path
+- **Claude Code Auto-Fetch**: Shared skill file (`.claude/skills/attachment-handling.md`) wires attachment tools into `/ticket`, `/investigate-ticket`, and `/helpscout conversation` commands — screenshots display inline automatically, no manual tool calls needed
 - **Token Savings**: `getThreads` now strips `_embedded` attachment objects (which were serialized as unread noise) and replaces them with a lightweight `attachmentCount` field per thread
 - **Virus Protection**: Attachments flagged as `state: "virus"` are surfaced with warnings in `getAttachments` and blocked from download in `getAttachmentData`
 
