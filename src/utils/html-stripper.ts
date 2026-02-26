@@ -1,3 +1,49 @@
+export interface InlineImage {
+  index: number;       // 1-based position in thread
+  src: string;         // URL, cid:, or data: URI
+  alt: string;         // alt text (empty string if none)
+  width: string | null;
+  height: string | null;
+  isFetchable: boolean; // true if src is http(s)://
+}
+
+/**
+ * Extract <img> tags from HTML, replace with [Image N] placeholders.
+ * Skips 1x1 tracking pixels. Returns extracted metadata + modified HTML.
+ */
+export function extractInlineImages(html: string): { images: InlineImage[]; html: string } {
+  if (!html) return { images: [], html: '' };
+
+  const images: InlineImage[] = [];
+  let imageIndex = 0;
+
+  const modified = html.replace(/<img\b[^>]*>/gi, (tag) => {
+    // Extract attributes
+    const src = tag.match(/\bsrc\s*=\s*["']([^"']+)["']/i)?.[1] || '';
+    const alt = tag.match(/\balt\s*=\s*["']([^"']*?)["']/i)?.[1] || '';
+    const width = tag.match(/\bwidth\s*=\s*["']?(\d+)["']?/i)?.[1] || null;
+    const height = tag.match(/\bheight\s*=\s*["']?(\d+)["']?/i)?.[1] || null;
+
+    // Skip 1x1 tracking pixels
+    if (width === '1' && height === '1') return '';
+
+    imageIndex++;
+    images.push({
+      index: imageIndex,
+      src,
+      alt,
+      width,
+      height,
+      isFetchable: /^https?:\/\//i.test(src),
+    });
+
+    const label = alt ? `[Image ${imageIndex}: ${alt}]` : `[Image ${imageIndex}]`;
+    return label;
+  });
+
+  return { images, html: modified };
+}
+
 /**
  * Strip HTML tags, convert to plain text, and optionally truncate.
  * Mirrors the logic from helpscout-claude/utils/helpers.py strip_html()

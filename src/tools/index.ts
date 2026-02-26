@@ -4,7 +4,7 @@ import { createMcpToolError, isApiError } from '../utils/mcp-errors.js';
 import { HelpScoutAPIConstraints, ToolCallContext } from '../utils/api-constraints.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../utils/config.js';
-import { stripHtml, stripQuotedContent } from '../utils/html-stripper.js';
+import { stripHtml, stripQuotedContent, extractInlineImages, InlineImage } from '../utils/html-stripper.js';
 import { z } from 'zod';
 
 /**
@@ -955,17 +955,21 @@ export class ToolHandler {
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     )[0];
 
-    // Helper to process body: redact PII, strip HTML, strip quoted/forwarded content
-    const processBody = (body: string | undefined): string => {
-      if (!config.security.allowPii) return '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]';
-      if (!body) return '';
+    // Helper to process body: extract inline images, redact PII, strip HTML, strip quoted/forwarded content
+    const processBody = (body: string | undefined): { body: string; inlineImages: InlineImage[] } => {
+      if (!config.security.allowPii) return { body: '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]', inlineImages: [] };
+      if (!body) return { body: '', inlineImages: [] };
       if (config.formatting.stripHtml) {
-        let text = stripHtml(body, config.formatting.maxBodyLength || undefined);
+        const extracted = extractInlineImages(body);
+        let text = stripHtml(extracted.html, config.formatting.maxBodyLength || undefined);
         text = stripQuotedContent(text);
-        return text;
+        return { body: text, inlineImages: extracted.images };
       }
-      return body;
+      return { body, inlineImages: [] };
     };
+
+    const firstCustomerProcessed = processBody(firstCustomerMessage?.body);
+    const latestStaffProcessed = processBody(latestStaffReply?.body);
 
     const summary = {
       conversation: {
@@ -980,15 +984,23 @@ export class ToolHandler {
       },
       firstCustomerMessage: firstCustomerMessage ? {
         id: firstCustomerMessage.id,
-        body: processBody(firstCustomerMessage.body),
+        body: firstCustomerProcessed.body,
         createdAt: firstCustomerMessage.createdAt,
         customer: firstCustomerMessage.customer,
+        ...(firstCustomerProcessed.inlineImages.length > 0 && {
+          inlineImages: firstCustomerProcessed.inlineImages,
+          inlineImageCount: firstCustomerProcessed.inlineImages.length,
+        }),
       } : null,
       latestStaffReply: latestStaffReply ? {
         id: latestStaffReply.id,
-        body: processBody(latestStaffReply.body),
+        body: latestStaffProcessed.body,
         createdAt: latestStaffReply.createdAt,
         createdBy: latestStaffReply.createdBy,
+        ...(latestStaffProcessed.inlineImages.length > 0 && {
+          inlineImages: latestStaffProcessed.inlineImages,
+          inlineImageCount: latestStaffProcessed.inlineImages.length,
+        }),
       } : null,
     };
 
@@ -1020,12 +1032,20 @@ export class ToolHandler {
     const processedThreads = threads.map(thread => {
       const { _embedded, body: rawBody, ...rest } = thread as any;
       let body = config.security.allowPii ? rawBody : '[Content hidden - set REDACT_MESSAGE_CONTENT=false to view]';
+      let inlineImages: InlineImage[] = [];
       if (config.security.allowPii && config.formatting.stripHtml && body) {
-        body = stripHtml(body, config.formatting.maxBodyLength || undefined);
+        const extracted = extractInlineImages(body);
+        inlineImages = extracted.images;
+        body = stripHtml(extracted.html, config.formatting.maxBodyLength || undefined);
         body = stripQuotedContent(body);
       }
       const attachmentCount = _embedded?.attachments?.length || 0;
-      return { ...rest, body, attachmentCount };
+      const result: any = { ...rest, body, attachmentCount };
+      if (inlineImages.length > 0) {
+        result.inlineImages = inlineImages;
+        result.inlineImageCount = inlineImages.length;
+      }
+      return result;
     });
 
     return {

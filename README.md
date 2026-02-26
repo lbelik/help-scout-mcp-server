@@ -9,7 +9,7 @@
 
 ## Table of Contents
 
-- [What's New](#whats-new-in-v170)
+- [What's New](#whats-new-in-v180)
 - [Quick Start](#quick-start)
 - [API Credentials](#getting-your-api-credentials)
 - [Tools & Capabilities](#tools--capabilities)
@@ -17,7 +17,15 @@
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 
-## What's New in v1.7.0
+## What's New in v1.8.0
+
+- **Inline Image Extraction**: Customer-pasted screenshots (inline `<img>` tags) are now preserved instead of silently stripped by HTML cleaning. Each image is replaced with a `[Image N: alt]` text placeholder, and full metadata (`src`, `alt`, `width`, `height`, `isFetchable`) is returned alongside the thread body.
+  - `getThreads` — Threads with inline images now include `inlineImages` array and `inlineImageCount`
+  - `getConversationSummary` — `firstCustomerMessage` and `latestStaffReply` include inline image metadata when present
+  - Tracking pixels (1x1 images) are automatically filtered out
+  - `isFetchable` flag distinguishes downloadable `https://` URLs from `cid:` and `data:` URIs
+
+### Previous Release (v1.7.0)
 
 - **Attachment Support**: Two new tools for viewing customer-attached screenshots and files:
   - `getAttachments` — Lists attachment metadata (filename, size, mimeType) for all threads in a conversation, without downloading binary data
@@ -162,8 +170,8 @@ Environment variables match Help Scout's UI exactly:
 
 | Tool | Description | Use Case |
 |------|-------------|----------|
-| `getConversationSummary` | Customer message + latest staff reply summary | Quick conversation overview |
-| `getThreads` | Complete conversation message history (with `attachmentCount` per thread) | Full context analysis |
+| `getConversationSummary` | Customer message + latest staff reply summary (with inline image metadata) | Quick conversation overview |
+| `getThreads` | Complete conversation message history (with `attachmentCount` and `inlineImages` per thread) | Full context analysis |
 | `getAttachments` | List attachment metadata across all threads | See what files/screenshots a customer attached |
 | `getAttachmentData` | Download a specific attachment (inline for small images, temp file for large) | View customer screenshots |
 | `getServerTime` | Current server timestamp | Time-relative searches |
